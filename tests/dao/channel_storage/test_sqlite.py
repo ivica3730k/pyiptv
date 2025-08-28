@@ -5,9 +5,9 @@ import tempfile
 import time
 import unittest
 
+from pyiptv.dao.channel_storage.sqlite import ChannelStorageSQLite
 from pyiptv.dto.channel import ChannelEntity
 from pyiptv.enum.channel_type import ChannelType
-from pyiptv.dao.channel_storage.sqlite import ChannelStorageSQLite
 
 
 def random_word(length: int) -> str:
@@ -146,6 +146,43 @@ class TestChannelStorageSQLite(unittest.TestCase):
             "news - sports", ChannelType.LIVE
         )
         self.assertIn(ch, results)
+
+    def test_special_chars_in_name_2(self):
+        entries = [
+            ChannelEntity(
+                id="1134458",
+                name="F1 - SKY SPORTS F1",
+                playable_url="http://1",
+                type=ChannelType.LIVE,
+            ),
+            ChannelEntity(
+                id="1134460",
+                name="F1 - SKY SPORTS F1 HD",
+                playable_url="http://2",
+                type=ChannelType.LIVE,
+            ),
+            ChannelEntity(
+                id="1134459",
+                name="F1 - SKY SPORTS F1 FHD",
+                playable_url="http://3",
+                type=ChannelType.LIVE,
+            ),
+            ChannelEntity(
+                id="1134461",
+                name="F1 - SKY SPORTS F1 HD DE",
+                playable_url="http://4",
+                type=ChannelType.LIVE,
+            ),
+        ]
+
+        for ch in entries:
+            self.storage.save_channel(ch)
+
+        results = self.storage.search_by_name_and_type("sky f1", ChannelType.LIVE)
+        for ch in entries:
+            self.assertIn(ch, results)
+
+        self.assertEqual(len(results), 4)
 
 
 class TestChannelStoragePerformance(unittest.TestCase):

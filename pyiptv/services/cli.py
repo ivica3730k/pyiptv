@@ -34,10 +34,11 @@ class CLIService:
         self.current_matches: List[ChannelEntity] = []
         self.selected_index: int = 0
         self.view_start_index: int = 0
-        self.max_visible_rows: int = 20
+        self.max_visible_rows: int = 30
+        self.last_query: str = ""
 
         for channel_list in self.channel_retreival.retreive_channels_by_type(
-            ChannelType.LIVE, page_size=10_000
+            ChannelType.LIVE, page_size=10000
         ):
             self.channel_storage.save_channel_bulk(channel_list)
 
@@ -49,7 +50,7 @@ class CLIService:
         )
 
         self.help_bar: TextArea = TextArea(
-            text="↑/↓ to navigate  |  ⏎ to play  |  Ctrl+C to quit",
+            text="Up/Down to navigate  |  ENTER to play  |  Ctrl+C to quit",
             style="class:help",
             height=1,
             focusable=False,
@@ -127,18 +128,27 @@ class CLIService:
             self.current_matches = []
             self.selected_index = 0
             self.view_start_index = 0
+            self.last_query = ""
             return
 
         try:
-            matches: List[ChannelEntity] = self.channel_storage.search_by_name_and_type(
-                name=query, channel_type=ChannelType.LIVE
+            self.current_matches: List[ChannelEntity] = (
+                self.channel_storage.search_by_name_and_type(
+                    name=query, channel_type=ChannelType.LIVE
+                )
             )
         except Exception:
             logger.exception("Search failed")
-            matches = []
+            self.current_matches = []
 
-        self.current_matches = matches[:500]
-        self.selected_index = min(self.selected_index, len(self.current_matches) - 1)
+        if query != self.last_query:
+            self.selected_index = 0
+            self.view_start_index = 0
+            self.last_query = query
+
+        self.selected_index = max(
+            0, min(self.selected_index, len(self.current_matches) - 1)
+        )
 
         if self.selected_index < self.view_start_index:
             self.view_start_index = self.selected_index

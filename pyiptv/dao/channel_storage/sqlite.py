@@ -1,27 +1,29 @@
+import logging
 import re
 import sqlite3
-from functools import lru_cache
 from typing import Dict, List, Optional, Set
 
 from pyiptv.dao.channel_storage.base import BaseChannelStorage
 from pyiptv.dto.channel import ChannelEntity
 from pyiptv.enum.channel_type import ChannelType
 
+logger = logging.getLogger(__name__)
+
 
 def _clean_token(token: str) -> str:
-    """Remove special characters from token for FTS safety."""
-    return re.sub(r"[^\w\s]", "", token).strip()
+    """Lowercase, strip, and remove punctuation from a token."""
+    return re.sub(r"[^\w\s]", "", token.lower()).strip()
 
 
 def generate_ngrams(text: str, n: int = 3) -> str:
-    """Generate space-separated n-grams (bigrams, trigrams) + full words from cleaned text."""
-    text = text.lower()
-    text = re.sub(r"[^\w\s]", "", text)  # Remove punctuation
+    """Generate space-separated n-grams from text for full-text search."""
+    text = re.sub(r"[^\w\s]", "", text.lower())
     grams: Set[str] = set()
-    grams.add(text)
     words: List[str] = text.split()
+    if not words:
+        return ""
+    grams.add(text)
     grams.update(words)
-
     for size in range(2, n + 1):
         for word in words:
             for i in range(len(word) - size + 1):
@@ -34,6 +36,7 @@ class ChannelStorageSQLite(BaseChannelStorage):
         self.conn: sqlite3.Connection = sqlite3.connect(filepath)
         self.conn.row_factory = sqlite3.Row
         self._create_schema()
+        logger.debug(f"Initialized SQLite channel storage at {filepath}")
 
     def _table_for_type(self, channel_type: ChannelType) -> str:
         return f"channels_{channel_type.value}"
@@ -43,11 +46,9 @@ class ChannelStorageSQLite(BaseChannelStorage):
 
     def _create_schema(self) -> None:
         cursor: sqlite3.Cursor = self.conn.cursor()
-
         for t in ChannelType:
             main: str = self._table_for_type(t)
             fts: str = self._fts_table_for_type(t)
-
             cursor.execute(
                 f"""
                 CREATE TABLE IF NOT EXISTS {main} (
@@ -57,7 +58,6 @@ class ChannelStorageSQLite(BaseChannelStorage):
                 ) WITHOUT ROWID
                 """
             )
-
             cursor.execute(
                 f"""
                 CREATE VIRTUAL TABLE IF NOT EXISTS {fts}
@@ -70,16 +70,13 @@ class ChannelStorageSQLite(BaseChannelStorage):
                 )
                 """
             )
-
         self.conn.commit()
 
     def save_channel(self, channel: ChannelEntity) -> None:
         cursor: sqlite3.Cursor = self.conn.cursor()
         main_table: str = self._table_for_type(channel.type)
         fts_table: str = self._fts_table_for_type(channel.type)
-
         self.conn.execute("BEGIN")
-
         cursor.execute(
             f"""
             INSERT OR REPLACE INTO {main_table} (id, name, playable_url)
@@ -87,7 +84,6 @@ class ChannelStorageSQLite(BaseChannelStorage):
             """,
             (channel.id, channel.name, channel.playable_url),
         )
-
         ngrams: str = generate_ngrams(channel.name)
         cursor.execute(
             f"""
@@ -96,21 +92,17 @@ class ChannelStorageSQLite(BaseChannelStorage):
             """,
             (channel.id, channel.name, channel.playable_url, ngrams),
         )
-
         self.conn.commit()
 
     def save_channel_bulk(self, channels: List[ChannelEntity]) -> None:
         cursor: sqlite3.Cursor = self.conn.cursor()
         self.conn.execute("BEGIN")
-
         grouped: Dict[ChannelType, List[ChannelEntity]] = {}
         for ch in channels:
             grouped.setdefault(ch.type, []).append(ch)
-
         for t, batch in grouped.items():
             main_table: str = self._table_for_type(t)
             fts_table: str = self._fts_table_for_type(t)
-
             main_rows: List[tuple[str, str, str]] = [
                 (ch.id, ch.name, ch.playable_url) for ch in batch
             ]
@@ -118,7 +110,6 @@ class ChannelStorageSQLite(BaseChannelStorage):
                 (ch.id, ch.name, ch.playable_url, generate_ngrams(ch.name))
                 for ch in batch
             ]
-
             cursor.executemany(
                 f"""
                 INSERT OR REPLACE INTO {main_table} (id, name, playable_url)
@@ -126,7 +117,6 @@ class ChannelStorageSQLite(BaseChannelStorage):
                 """,
                 main_rows,
             )
-
             cursor.executemany(
                 f"""
                 INSERT OR REPLACE INTO {fts_table} (id, name, playable_url, ngrams)
@@ -134,10 +124,8 @@ class ChannelStorageSQLite(BaseChannelStorage):
                 """,
                 fts_rows,
             )
-
         self.conn.commit()
 
-    @lru_cache(maxsize=8192)
     def get_channel(self, channel_id: str) -> Optional[ChannelEntity]:
         cursor: sqlite3.Cursor = self.conn.cursor()
         for t in ChannelType:
@@ -148,15 +136,18 @@ class ChannelStorageSQLite(BaseChannelStorage):
                 return self._row_to_entity(row, t)
         return None
 
-    @lru_cache(maxsize=8192)
     def search_by_name_and_type(
         self, name: str, channel_type: ChannelType
     ) -> List[ChannelEntity]:
+        logger.debug(
+            f"Searching for channels with name '{name}' and type '{channel_type}'"
+        )
         cursor: sqlite3.Cursor = self.conn.cursor()
-        tokens: List[str] = [_clean_token(tok) for tok in name.lower().split()]
-        match_query: str = " AND ".join(f'ngrams:"{tok}"' for tok in tokens if tok)
         fts_table: str = self._fts_table_for_type(channel_type)
-
+        tokens: List[str] = [_clean_token(tok) for tok in name.lower().split()]
+        if not tokens:
+            return []
+        match_query: str = " AND ".join(f'ngrams:"{tok}"' for tok in tokens if tok)
         cursor.execute(
             f"""
             SELECT id, name, playable_url, bm25({fts_table}) AS score
@@ -166,8 +157,10 @@ class ChannelStorageSQLite(BaseChannelStorage):
             """,
             (match_query,),
         )
-
         rows: List[sqlite3.Row] = cursor.fetchall()
+        logger.debug(
+            f"Found {len(rows)} matching channels. Names: {[r['name'] for r in rows]}"
+        )
         return [self._row_to_entity(r, channel_type) for r in rows]
 
     def _row_to_entity(

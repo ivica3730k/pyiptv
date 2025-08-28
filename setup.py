@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 
 setup(
     name="pyiptv",
@@ -21,7 +21,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "pyiptv=pyiptv.main:main", 
+            "pyiptv=pyiptv.main:main",
         ],
     },
     classifiers=[
