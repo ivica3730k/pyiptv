@@ -18,7 +18,8 @@ from pyiptv.dao.channel_storage.sqlite import ChannelStorageSQLite
 from pyiptv.players.vlc import VLCPlayer
 from pyiptv.services.cli import CLIService
 
-if __name__ == "__main__":
+
+def main():
     xtreme_url = os.getenv("XTREME_URL", "")
     xtreme_username = os.getenv("XTREME_USERNAME", "")
     xtreme_password = os.getenv("XTREME_PASSWORD", "")
@@ -44,3 +45,7 @@ if __name__ == "__main__":
         )
 
         cli_service.run()
+
+
+if __name__ == "__main__":
+    main()
