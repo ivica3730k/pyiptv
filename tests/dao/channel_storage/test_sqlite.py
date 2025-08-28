@@ -7,7 +7,7 @@ import unittest
 
 from pyiptv.dto.channel import ChannelEntity
 from pyiptv.enum.channel_type import ChannelType
-from src.pyiptv.dao.channel_storage.sqlite import ChannelStorageSQLite
+from pyiptv.dao.channel_storage.sqlite import ChannelStorageSQLite
 
 
 def random_word(length: int) -> str:
