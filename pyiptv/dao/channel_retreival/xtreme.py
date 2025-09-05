@@ -19,16 +19,23 @@ class XtremeChannelSource(BaseChannelRetrieval):
     def retreive_channels_by_type(
         self, channel_type: ChannelType, page_size: int = 10000
     ) -> Generator[List[ChannelEntity], None, None]:
-        if channel_type != ChannelType.LIVE:
-            raise NotImplementedError(
-                "Only LIVE channel type is supported by Xtreme channel retrieval for now."
+        if channel_type == ChannelType.LIVE:
+            return self._retreive_streams(
+                action="get_live_streams", page_size=page_size
             )
+        if channel_type == ChannelType.VOD:
+            return self._retreive_streams(action="get_vod_streams", page_size=page_size)
+        else:
+            raise NotImplementedError(f"Channel type {channel_type} not supported.")
 
+    def _retreive_streams(
+        self, action: str, page_size: int
+    ) -> Generator[List[ChannelEntity], None, None]:
         url = f"{self.base_url}/player_api.php"
         params = {
             "username": self.username,
             "password": self.password,
-            "action": "get_live_streams",
+            "action": action,
         }
 
         try:

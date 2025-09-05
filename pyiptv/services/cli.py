@@ -42,6 +42,11 @@ class CLIService:
         ):
             self.channel_storage.save_channel_bulk(channel_list)
 
+        for channel_list in self.channel_retreival.retreive_channels_by_type(
+            ChannelType.VOD, page_size=10000
+        ):
+            self.channel_storage.save_channel_bulk(channel_list)
+
         self.output_field: TextArea = TextArea(
             style="class:output",
             scrollbar=True,
@@ -121,6 +126,14 @@ class CLIService:
             logger.info(f"Playing channel: {selected_channel.name}")
             self.player.play(selected_channel.playable_url)
 
+    def _search_all(self, query: str) -> List[ChannelEntity]:
+        results: List[ChannelEntity] = []
+        for channel_type in [ChannelType.LIVE, ChannelType.VOD]:
+            results.extend(
+                self.channel_storage.search_by_name_and_type(query, channel_type)
+            )
+        return results
+
     def update_output(self) -> None:
         query: str = self.input_field.text.strip()
         if not query:
@@ -132,11 +145,7 @@ class CLIService:
             return
 
         try:
-            self.current_matches: List[ChannelEntity] = (
-                self.channel_storage.search_by_name_and_type(
-                    name=query, channel_type=ChannelType.LIVE
-                )
-            )
+            self.current_matches: List[ChannelEntity] = self._search_all(query)
         except Exception:
             logger.exception("Search failed")
             self.current_matches = []
